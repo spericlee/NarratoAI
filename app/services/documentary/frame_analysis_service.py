@@ -179,7 +179,14 @@ JSON 必须包含以下键：
         }
 
     def _parse_narration_items(self, narration_raw: str) -> list[dict[str, Any]]:
+        # 记录原始返回内容以便调试
+        logger.debug(f"解说文案原始返回 (前500字符):\n{narration_raw[:500]}")
+        
         parsed = self._repair_narration_payload(narration_raw)
+        
+        if parsed is None:
+            logger.error(f"无法解析解说文案JSON，原始内容:\n{narration_raw}")
+            raise ValueError("解说文案格式错误，无法解析JSON或缺少items字段")
 
         items: list[dict[str, Any]] = []
         if isinstance(parsed, dict):
@@ -188,8 +195,10 @@ JSON 必须包含以下键：
                 items = [item for item in raw_items if isinstance(item, dict)]
 
         if not items:
+            logger.error(f"解析后的JSON缺少items字段或items为空，解析结果: {parsed}")
             raise ValueError("解说文案格式错误，无法解析JSON或缺少items字段")
 
+        logger.info(f"成功解析解说文案，共 {len(items)} 个片段")
         return items
 
     def _build_narration_input(self, *, markdown_output: str, video_theme: str, custom_prompt: str) -> str:
@@ -210,45 +219,82 @@ JSON 必须包含以下键：
             try:
                 parsed = json.loads(payload)
                 return parsed if isinstance(parsed, dict) else None
-            except Exception:
+            except Exception as e:
+                logger.debug(f"JSON解析失败: {str(e)[:100]}")
                 return None
 
         cleaned = (narration_raw or "").strip()
         if not cleaned:
             return None
 
+        # 构建候选列表
         candidates: list[str] = [cleaned]
+        
+        # 尝试修复双大括号
         candidates.append(cleaned.replace("{{", "{").replace("}}", "}"))
 
+        # 提取 markdown 代码块中的 JSON
         json_block = re.search(r"```json\s*(.*?)\s*```", cleaned, re.DOTALL)
         if json_block:
             candidates.append(json_block.group(1).strip())
+        
+        # 也尝试提取普通代码块
+        code_block = re.search(r"```\s*(.*?)\s*```", cleaned, re.DOTALL)
+        if code_block:
+            candidates.append(code_block.group(1).strip())
 
+        # 提取第一个 { 和最后一个 } 之间的内容
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start >= 0 and end > start:
             candidates.append(cleaned[start : end + 1])
 
+        # 依次尝试每个候选
         for candidate in candidates:
             parsed = load_json_candidate(candidate)
             if parsed is not None:
+                logger.debug(f"成功解析JSON候选（长度: {len(candidate)}）")
                 return parsed
 
+        # 如果所有候选都失败，尝试更激进的修复
+        logger.warning("标准JSON解析失败，尝试激进修复策略")
         fixed = cleaned.replace("{{", "{").replace("}}", "}")
+        
+        # 提取 JSON 范围
         fixed_start = fixed.find("{")
         fixed_end = fixed.rfind("}")
         if fixed_start >= 0 and fixed_end > fixed_start:
             fixed = fixed[fixed_start : fixed_end + 1]
 
+        # 移除注释
         fixed = re.sub(r"^\s*#.*$", "", fixed, flags=re.MULTILINE)
         fixed = re.sub(r"^\s*//.*$", "", fixed, flags=re.MULTILINE)
+        
+        # 修复 trailing commas
         fixed = re.sub(r",\s*}", "}", fixed)
         fixed = re.sub(r",\s*]", "]", fixed)
+        
+        # 修复单引号为双引号
         fixed = re.sub(r"'([^']*)'\s*:", r'"\1":', fixed)
+        
+        # 修复未加引号的键名
         fixed = re.sub(r'([{\[,]\s*)([A-Za-z_][\w\u4e00-\u9fff]*)(\s*:)', r'\1"\2"\3', fixed)
+        
+        # 修复双重引号
         fixed = re.sub(r'""([^"]*?)""', r'"\1"', fixed)
+        
+        # 修复缺失的逗号（在 }{ 或 }[ 之间）
+        fixed = re.sub(r'}\s*{', '},{', fixed)
+        fixed = re.sub(r'}\s*\[', '},[', fixed)
+        fixed = re.sub(r']\s*{', '],{', fixed)
 
-        return load_json_candidate(fixed)
+        parsed = load_json_candidate(fixed)
+        if parsed is not None:
+            logger.info("通过激进修复策略成功解析JSON")
+            return parsed
+        
+        logger.error("所有JSON修复策略均失败")
+        return None
 
     def _resolve_frame_interval(self, frame_interval_input: int | float | None) -> float:
         interval = frame_interval_input

@@ -618,12 +618,24 @@ def init_resources():
 
         # 检查字体文件
         font_files = [
+            ("SourceHanSansSC-Regular.otf",
+             "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
             ("SourceHanSansCN-Regular.otf",
              "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
             ("simhei.ttf", "C:/Windows/Fonts/simhei.ttf"),  # Windows 黑体
             ("simkai.ttf", "C:/Windows/Fonts/simkai.ttf"),  # Windows 楷体
             ("simsun.ttc", "C:/Windows/Fonts/simsun.ttc"),  # Windows 宋体
         ]
+
+        # 优先检查字体目录中是否已有字体文件（用户手动放置）
+        existing_fonts = []
+        for file in os.listdir(font_dir):
+            if file.lower().endswith(('.ttf', '.ttc', '.otf')):
+                existing_fonts.append(file)
+        
+        if existing_fonts:
+            logger.info(f"检测到本地字体文件: {', '.join(existing_fonts)}")
+            return
 
         # 优先使用系统字体
         system_font_found = False
@@ -639,7 +651,7 @@ def init_resources():
 
         # 如果没有找到系统字体，则下载思源黑体
         if not system_font_found:
-            source_han_path = os.path.join(font_dir, "SourceHanSansCN-Regular.otf")
+            source_han_path = os.path.join(font_dir, "SourceHanSansSC-Regular.otf")
             if not os.path.exists(source_han_path):
                 download_font(font_files[0][1], source_han_path)
 

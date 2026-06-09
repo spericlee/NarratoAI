@@ -99,9 +99,13 @@ def validate_openai_compatible_model_name(model_name: str, model_type: str) -> t
     
     # OpenAI 兼容 推荐格式：provider/model（如 gemini/gemini-2.0-flash-lite）
     # 但也支持直接的模型名称（如 gpt-4o，OpenAI 兼容 会自动推断 provider）
+    # 同时支持绝对路径格式的模型名称（如 /run/media/.../model-name，用于本地 vLLM 服务）
     
-    # 检查是否包含 provider 前缀（推荐格式）
-    if "/" in model_name:
+    # 检查是否为绝对路径（以 / 开头）
+    if model_name.startswith("/"):
+        logger.debug(f"{model_type} 模型名称为绝对路径格式，将直接使用")
+        # 绝对路径格式直接通过验证
+    elif "/" in model_name:
         parts = model_name.split("/")
         if len(parts) < 2 or not parts[0] or not parts[1]:
             return False, f"{model_type} 模型名称格式错误。推荐格式: provider/model （如 gemini/gemini-2.0-flash-lite）"
@@ -119,7 +123,7 @@ def validate_openai_compatible_model_name(model_name: str, model_type: str) -> t
     if len(model_name) < 3:
         return False, f"{model_type} 模型名称过短"
     
-    if len(model_name) > 200:
+    if len(model_name) > 500:  # 路径可能较长，增加限制
         return False, f"{model_type} 模型名称过长"
     
     return True, ""
