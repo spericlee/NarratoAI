@@ -32,17 +32,16 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 
 </div>
 
-## Latest News
-- 2026.04.03 Released version 0.7.8, refactored the documentary frame-analysis pipeline with a shared service and improved extraction, caching, vision batching, and narration generation
-- 2025.05.11 Released new version 0.6.0, supports **short drama commentary** and optimized editing process
-- 2025.03.06 Released new version 0.5.2, supports DeepSeek R1 and DeepSeek V3 models for short drama mixing
-- 2024.12.16 Released new version 0.3.9, supports Alibaba Qwen2-VL model for video understanding; supports short drama mixing
-- 2024.11.24 Opened Discord community: https://discord.com/invite/V2pbAqqQNb
-- 2024.11.11 Migrated open source community, welcome to join! [Join the official community](https://github.com/linyqh/NarratoAI/wiki)
-- 2024.11.10 Released official documentation, details refer to [Official Documentation](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
-- 2024.11.10 Released new version v0.3.5; optimized video editing process,
-
 ## Major Benefits 🎉
+
+### APIMart
+
+Thanks to APIMart for sponsoring this project! APIMart is a low-cost API platform for AI image & video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — [sign up here to get started](https://go.apimart.ai/gh-narratoai).
+
+<a href="https://go.apimart.ai/gh-narratoai">
+  <img src="docs/apimart.png" alt="APIMart" style="width: 100%; max-width: 900px; height: auto;">
+</a>
+
 From now on, fully support DeepSeek model! Register to enjoy 20 million free tokens (worth 14 yuan platform quota), editing a 10-minute video only costs 0.1 yuan!  
 
 🔥 Quick benefits:  
@@ -67,20 +66,33 @@ Below is a screenshot of this person's x (Twitter) homepage
 
 <img src="https://github.com/user-attachments/assets/c492ab99-52cd-4ba2-8695-1bd2073ecf12" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
 
+## Latest News
+- 2026.07.02 Released version 0.8.4 with Doubao TTS API Key setup and legacy credential compatibility
+- 2026.04.03 Released version 0.7.8, refactored the documentary frame-analysis pipeline with a shared service and improved extraction, caching, vision batching, and narration generation
+- 2025.05.11 Released new version 0.6.0, supports **short drama commentary** and optimized editing process
+- 2025.03.06 Released new version 0.5.2, supports DeepSeek R1 and DeepSeek V3 models for short drama mixing
+- 2024.12.16 Released new version 0.3.9, supports Alibaba Qwen2-VL model for video understanding; supports short drama mixing
+- 2024.11.24 Opened Discord community: https://discord.com/invite/V2pbAqqQNb
+- 2024.11.11 Migrated open source community, welcome to join! [Join the official community](https://github.com/linyqh/NarratoAI/wiki)
+- 2024.11.10 Released official documentation, details refer to [Official Documentation](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
+- 2024.11.10 Released new version v0.3.5; optimized video editing process,
+
 ## Future Plans 🥳
 - [x] Windows Integration Pack Release
 - [x] Optimized the story generation process and improved the generation effect
 - [x] Released version 0.3.5 integration package
 - [x] Support Alibaba Qwen2-VL large model for video understanding
-- [x] Support short drama commentary
+- [x] Support TwelveLabs Pegasus as an optional video-understanding backend (analyzes footage natively to drive highlight selection and commentary; opt-in, set `vision_llm_provider = "twelvelabs"`)
+- [x] Support short drama mixing
   - [x] One-click merge materials
   - [x] One-click transcription
   - [x] One-click clear cache
-- [ ] Support exporting to Jianying drafts
+- [x] Support exporting to Jianying drafts
 - [X] Support short drama commentary
 - [ ] Character face matching
 - [ ] Support automatic matching based on voiceover, script, and video materials
-- [ ] Support more TTS engines
+- [X] Support more TTS engines
+- [X] Support optional AI-generated background music
 - [ ] ...
 
 ## System Requirements 📦
@@ -88,6 +100,17 @@ Below is a screenshot of this person's x (Twitter) homepage
 - Recommended minimum: CPU with 4 cores or more, 8GB RAM or more, GPU is not required
 - Windows 10/11 or MacOS 11.0 or above
 - [Python 3.12+](https://www.python.org/downloads/)
+
+## Local Run 🚀
+
+```bash
+git clone https://github.com/linyqh/NarratoAI.git
+cd NarratoAI
+
+uv sync
+cp config.example.toml config.toml
+uv run streamlit run webui.py --server.maxUploadSize=2048
+```
 
 ## Feedback & Suggestions 📢
 
@@ -115,4 +138,4 @@ Click to view [`LICENSE`](LICENSE) file
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=linyqh/NarratoAI&type=Date)](https://star-history.com/#linyqh/NarratoAI&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=linyqh/NarratoAI&type=Date)](https://star-history.dera.page/#linyqh/NarratoAI&Date)

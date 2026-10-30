@@ -6,10 +6,17 @@ from unittest.mock import patch
 
 from app.config import config
 from app.services.llm.base import TextModelProvider
+from app.services.llm.exceptions import ConfigurationError
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
-from app.services.llm.openai_compatible_provider import OpenAICompatibleVisionProvider
+from app.services.llm.openai_compatible_provider import (
+    OpenAICompatibleTextProvider,
+    OpenAICompatibleVisionProvider,
+    is_trusted_openai_compatible_base_url,
+    validate_openai_compatible_base_url,
+)
 from app.services.llm.providers import register_all_providers
+from app.utils.openai_base_url_security import openai_compatible_base_url_warning
 
 
 class DummyOpenAITextProvider(TextModelProvider):
@@ -45,11 +52,12 @@ class OpenAICompatManagerTests(unittest.TestCase):
         config.app.clear()
         config.app.update(self._original_app)
 
-    def test_register_all_providers_only_registers_openai_provider(self):
+    def test_register_all_providers_registers_expected_providers(self):
         register_all_providers()
 
+        # 文本仅 OpenAI 兼容；视觉额外提供可选的 TwelveLabs Pegasus。
         self.assertEqual({"openai"}, set(LLMServiceManager.list_text_providers()))
-        self.assertEqual({"openai"}, set(LLMServiceManager.list_vision_providers()))
+        self.assertEqual({"openai", "twelvelabs"}, set(LLMServiceManager.list_vision_providers()))
 
     def test_get_text_provider_uses_openai_keys(self):
         LLMServiceManager.register_text_provider("openai", DummyOpenAITextProvider)
@@ -114,6 +122,144 @@ class OpenAICompatVisionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(6, len(result))
         self.assertEqual(2, max_in_flight)
+
+
+class OpenAICompatGenerationOptionTests(unittest.TestCase):
+    def setUp(self):
+        self._original_app = dict(config.app)
+
+    def tearDown(self):
+        config.app.clear()
+        config.app.update(self._original_app)
+
+    def test_build_options_uses_generation_defaults(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        for key in (
+            "text_openai_temperature",
+            "text_openai_top_p",
+            "text_openai_max_tokens",
+            "text_openai_thinking_level",
+        ):
+            config.app.pop(key, None)
+
+        options = provider._build_chat_completion_options("text")
+
+        self.assertEqual(1.0, options["temperature"])
+        self.assertEqual(0.95, options["top_p"])
+        self.assertEqual(65536, options["max_tokens"])
+        self.assertNotIn("extra_body", options)
+
+    def test_text_request_can_override_model_for_fast_tasks(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="reasoning-model")
+
+        options = provider._build_text_completion_kwargs(
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.2,
+            max_tokens=None,
+            response_format=None,
+            kwargs={"model": "fast-model", "thinking_level": "off"},
+        )
+
+        self.assertEqual("fast-model", options["model"])
+        self.assertNotIn("extra_body", options)
+
+    def test_build_options_uses_per_model_generation_config(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        config.app.update(
+            {
+                "text_openai_temperature": 0.3,
+                "text_openai_top_p": 0.8,
+                "text_openai_max_tokens": 2048,
+                "text_openai_thinking_level": "high",
+            }
+        )
+
+        options = provider._build_chat_completion_options("text")
+
+        self.assertEqual(0.3, options["temperature"])
+        self.assertEqual(0.8, options["top_p"])
+        self.assertEqual(2048, options["max_tokens"])
+        self.assertEqual({"reasoning_effort": "high"}, options["extra_body"])
+
+    def test_explicit_generation_options_override_config(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        config.app["text_openai_temperature"] = 0.3
+
+        options = provider._build_chat_completion_options("text", temperature=0.9, max_tokens=512)
+
+        self.assertEqual(0.9, options["temperature"])
+        self.assertEqual(512, options["max_tokens"])
+
+
+class OpenAICompatBaseURLValidationTests(unittest.TestCase):
+    def setUp(self):
+        self._original_app = dict(config.app)
+
+    def tearDown(self):
+        config.app.clear()
+        config.app.update(self._original_app)
+
+    def test_known_providers_and_local_ollama_are_trusted(self):
+        trusted_urls = [
+            "https://api.openai.com/v1",
+            "https://api.siliconflow.cn/v1",
+            "https://openrouter.ai/api/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "https://example.openai.azure.com/openai/deployments/demo",
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:11434/v1",
+        ]
+
+        for url in trusted_urls:
+            with self.subTest(url=url):
+                self.assertTrue(is_trusted_openai_compatible_base_url(url))
+
+    def test_unrecognized_or_unsafe_base_urls_are_not_trusted(self):
+        untrusted_urls = [
+            "https://attacker.example/v1",
+            "http://api.openai.com/v1",
+            "https://user@api.openai.com/v1",
+            "https://127.0.0.1:9999/v1",
+            "not-a-url",
+        ]
+
+        for url in untrusted_urls:
+            with self.subTest(url=url):
+                self.assertFalse(is_trusted_openai_compatible_base_url(url))
+
+    def test_build_client_allows_well_formed_custom_base_url_by_default(self):
+        provider = OpenAICompatibleTextProvider(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://custom.example/v1",
+        )
+
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI") as async_openai:
+            provider._build_client()
+
+        self.assertEqual("https://custom.example/v1", async_openai.call_args.kwargs["base_url"])
+
+    def test_custom_base_url_validation_returns_normalized_url(self):
+        self.assertEqual(
+            "https://custom.example/v1",
+            validate_openai_compatible_base_url(" https://custom.example/v1 "),
+        )
+
+    def test_custom_base_url_warning_only_for_untrusted_well_formed_urls(self):
+        warning = openai_compatible_base_url_warning("https://custom.example/v1")
+        self.assertIn("custom.example", warning)
+        self.assertEqual("", openai_compatible_base_url_warning("https://api.openai.com/v1"))
+        self.assertEqual("", openai_compatible_base_url_warning(""))
+
+    def test_custom_base_url_validation_rejects_malformed_urls(self):
+        provider = OpenAICompatibleTextProvider(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://user@custom.example/v1",
+        )
+
+        with self.assertRaises(ConfigurationError):
+            provider._build_client()
 
 
 class ExplicitVisionAdapterSettingsTests(unittest.IsolatedAsyncioTestCase):
